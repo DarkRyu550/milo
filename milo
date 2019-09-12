@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+import api
+john = api.MiloAPI("https://milo.rodar.codes")
+
+from getpass import getpass
+
+options = {}
+def option(name, desc):
+	if name in options:
+		raise Exception("Option {} has already been registered".format(name))
+	
+	def register(fn):
+		options[name] = (fn, desc)
+		return fn
+	
+	return register
+
+admin_options = {}
+def admin_option(name, desc):
+	if name in options:
+		raise Exception("Admin option {} has already been registered".format(name))
+	
+	def register(fn):
+		admin_options[name] = (fn, desc)
+		return fn
+	
+	return register
+
+@option("register", "Register a new user.")
+def register():
+	username = input("email: ")
+	realname = input("real name: ")
+	password = getpass("password: ")
+
+	return john.register(realname, username, password)
+
+@option("login", "Log in as an existing user.")
+def login():
+	username = input("email: ")
+	password = getpass("password: ")
+
+	return john.login(username, password)
+
+@option("transfer", "Transfer money between users.")
+def transfer():
+	target  = input("target: ")
+	amount = input("amount: ")
+	amount = int(amount)
+
+	return john.transfer(target, amount)
+
+@option("history", "Get your transfer history.")
+def history():
+	informa = john.info()
+	history = john.history()["history"]
+
+	print("")
+	print("Last 20 transactions.")
+	for entry in history:
+		import json
+		source  = entry["from"]
+		target  = entry["to"]
+		amount = entry["amount"]
+		
+		if source == informa["username"]:
+			print("Transferred {} G$H to {}".format(amount, target))
+		else:
+			print("Received {} G$H from {}".format(amount, source))
+
+@option("withdraw", "Withdraw from your balance.")
+def withdraw():
+	amount = input("amount: ")
+	amount = int(amount)
+	return john.withdraw(amount)
+
+@option("quit", "Quit the program.")
+def quit():
+	print("Goodbye.")
+
+	import sys
+	sys.exit(0)
+
+@admin_option("admin_deposit", "Deposit into another user's account")
+def admin_deposit():
+	target  = input("target: ")
+	amount = input("amount: ")
+	amount = int(amount)
+	return john.admin_deposit(target, amount)
+
+@admin_option("admin_withdraw", "Withdraw from another user's account")
+def admin_withdraw():
+	source  = input("source: ")
+	amount = input("amount: ")
+	amount = int(amount)
+	return john.admin_withdraw(source, amount)
+
+def display():
+	print("")
+	try:
+		info = john.info()
+		print("Username: {}".format(info["username"]))
+		print("Balance:  {} G$H".format(info["balance"]))
+		adm = info["is_admin"]
+	except api.MiloError:
+		print("Not logged in.")
+		adm = False
+	
+	print("")
+	print("Your options are:")
+	for (name, (_, desc)) in options.items():
+		print("\t{}: {}".format(name, desc))
+	
+	if adm:
+		print("Your administrative options are:")
+		for (name, (_, desc)) in admin_options.items():
+			print("\t{}: {}".format(name, desc))
+	
+def main():
+	while True:
+		display()
+		try:
+			import readline
+			cmd = input("> ")
+		except KeyboardInterrupt:
+			quit()
+		except EOFError:
+			quit()
+
+		try:
+			info = john.info()
+			if info["is_admin"]:
+				pool = {**options, **admin_options}
+			else:
+				pool = options
+		except api.MiloError:
+			pool = options
+
+		if not cmd in pool:
+			print("Invalid option.")
+			continue
+
+		(fn, _) = pool[cmd]
+		try:
+			fn()
+			print("Done.")
+		except api.MiloError as e:
+			print("Operation failed: {}".format(e.msg))
+		except Exception as e:
+			print("Unknown error: {}".format(e))
+
+if __name__ == "__main__":
+	main()
