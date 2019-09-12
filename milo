@@ -98,6 +98,7 @@ def display():
 	print("")
 	try:
 		info = john.info()
+		print(info["realname"])
 		print("Username: {}".format(info["username"]))
 		print("Balance:  {} G$H".format(info["balance"]))
 		adm = info["is_admin"]
