@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import api
-john = api.MiloAPI("https://milo.rodar.codes")
+john = api.MiloAPI("https://milo.rodar.codes/api")
 
 from getpass import getpass
 
