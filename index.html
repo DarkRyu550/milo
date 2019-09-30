@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en_US">
+    <head>
+        <meta charset="UTF-8">
+        <title>João Milo - The Impenetable</title>
+    </head>
+    <body>
+        <div id="app"></div>
+    </body>
+    <script>
+        function element(type, opts) {
+            const e = document.createElement(type);
+            if(opts) {
+                for(const k in opts) {
+                    if(opts.hasOwnProperty(k)) {
+                        e[k] = opts[k];
+                    }
+                }
+                if(opts.class) {
+                    e.classList.add(opts.class);
+                }
+                if(opts.classes) {
+                    for(const v of opts.classes) {
+                        e.classList.add(v);
+                    }
+                }
+                if(opts.children) {
+                    for(const v of opts.children) {
+                        e.appendChild(v);
+                    }
+                }
+                if(opts.handlers) {
+                    for(const k in opts.handlers) {
+                        if(opts.handlers.hasOwnProperty(k)) {
+                            const h = opts.handlers[k];
+                            e[k] = (...x) => h(e, ...x);
+                        }
+                    }
+                }
+            }
+            return e;
+        }
+
+        function div(opts) {
+            return element("div", opts);
+        }
+
+        function h1(opts) {
+            return element("h1", opts);
+        }
+
+        function input(opts) {
+            return element("input", opts);
+        }
+
+        function button(opts) {
+            return element("button", opts);
+        }
+
+        function p(opts) {
+            return element("p", opts);
+        }
+
+        function lazy(fn) {
+            const cache = {};
+            return (...args) => {
+                if(cache.set) return cache.value;
+                const v = fn(...args);
+                cache.set = true;
+                return cache.value = v;
+            }
+        }
+
+        function page(fn) {
+            return lazy(() => {
+                const cleaners = [];
+                const preRender = [];
+                const p = fn({cleaners, preRender});
+                return {
+                    clean() {
+                        cleaners.forEach(x => x());
+                    },
+                    render(state) {
+                        preRender.forEach(v => v(state));
+                        return p;
+                    }
+                }
+            })
+        }
+
+        function resetInput(i) {
+            return () => {
+                i.value = "";
+            };
+        }
+
+        function state(name) {
+            const holder = {};
+            return [() => holder.value, (state) => {
+                holder.value = state[name];
+            }];
+        }
+
+        function firstOf(fns) {
+            return new Promise((resolve, reject) => {
+                for(const k of Object.getOwnPropertyNames(fns)) {
+                    fns[k].then(res => {
+                        resolve({action: k, value: res})
+                    }).catch(e => reject({action: k, error: e}))
+                }
+            })
+        }
+
+        function delayedAction() {
+            let resolve;
+            const promise = new Promise(res => resolve = res);
+            return {resolve, promise};
+        }
+
+        function jsonPost(url, body, token) {
+            return fetch(url, {
+                method: "POST",
+                headers: {
+                    "Authorization": token || "none",
+                    ["Content-Type"]: "application/json"
+                },
+                body: JSON.stringify(body)
+            })
+                .then(r => {
+                    if(r.status !== 200) {
+                        throw new Error("")
+                    }
+                    return r;
+                })
+                .then(r => r.json())
+                .catch(e => ({success: false, error: e}))
+                .then(r => {
+                    if(!r.success) console.error(r.error);
+                    return r;
+                })
+        }
+
+        function jsonGet(url, token) {
+            return fetch(url, { headers: {"Authorization": token }})
+                .then(r => r.json()).catch(e => ({success: false, error: e}))
+                .then(r => {
+                    console.log(r);
+                    if(!r.success) console.error(r.error);
+                    return r;
+                })
+        }
+
+        function removeAllChildren(node) {
+            while(node.firstChild) node.removeChild(node.firstChild);
+        }
+
+        const app = document.getElementById("app");
+        const renderer = {
+            state: {},
+            goto(name, actions) {
+                let resolvePromise = null;
+                if(actions) {
+                    const resolves = {};
+                    const promises = {};
+                    for(const v of actions) {
+                        const {resolve, promise} = delayedAction();
+                        resolves[v] = resolve;
+                        promises[v] = promise;
+                    }
+                    Object.assign(this.state, resolves);
+                    resolvePromise = firstOf(promises);
+                }
+                const p = this.pages[name]();
+                p.clean();
+                removeAllChildren(app);
+                app.appendChild(p.render(this.state));
+                return resolvePromise;
+            }
+        };
+        renderer.pages = {
+            login: page(({cleaners, preRender}) => {
+                const [loginClick, setLoginClick] = state("doLogin");
+                const [backClick, setBackClick] = state("back");
+                preRender.push(setLoginClick);
+                preRender.push(setBackClick);
+
+                const error = p({});
+                cleaners.push(() => error.innerText = "");
+                preRender.push(state => error.innerText = state.loginError || "");
+
+                const username = input({
+                    placeholder: "User"
+                });
+                cleaners.push(resetInput(username));
+                const password = input({
+                    placeholder: "Password",
+                    type: "password"
+                });
+                cleaners.push(resetInput(password));
+                const submit = button({
+                    innerText: "Login",
+                    onclick: () => loginClick()({
+                        username: username.value,
+                        key: password.value
+                    })
+                });
+                const goBack = button({
+                    innerText: "Back",
+                    onclick: () => backClick()()
+                });
+
+                return div({
+                    children: [
+                        username, password, submit, goBack,
+                        element("br", {}), error
+                    ]
+                })
+            }),
+            register: page(({cleaners, preRender}) => {
+                const [registerClick, setRegisterClick] = state("doRegister");
+                const [backClick, setBackClick] = state("back");
+                preRender.push(setRegisterClick);
+                preRender.push(setBackClick);
+
+                const error = p({});
+                cleaners.push(() => error.innerText = "");
+                preRender.push(state => error.innerText = state.registerError || "");
+                const realname = input({
+                    placeholder: "Real Name"
+                });
+                cleaners.push(resetInput(realname));
+
+                const username = input({
+                    placeholder: "Username"
+                });
+                cleaners.push(resetInput(username));
+                const password = input({
+                    placeholder: "Password",
+                    type: "password"
+                });
+                cleaners.push(resetInput(password));
+                const submit = button({
+                    innerText: "Register",
+                    onclick: () => registerClick()({
+                        name: realname.value,
+                        username: username.value,
+                        key: password.value
+                    })
+                });
+                const goBack = button({
+                    innerText: "Back",
+                    onclick: () => backClick()()
+                });
+
+                return div({
+                    children: [
+                        realname, username, password, submit, goBack,
+                        element("br", {}), error
+                    ]
+                })
+            }),
+            home: page(({preRender}) => {
+                const [loginRequest, setLoginRequest] = state("login");
+                const [registerRequest, setRegisterRequest] = state("register");
+
+                preRender.push(setLoginRequest);
+                preRender.push(setRegisterRequest);
+                return div({
+                    children: [
+                        h1({
+                            innerText: "João Milo - o banco impenetravel"
+                        }),
+                        button({
+                            innerText: "login",
+                            onclick: () => loginRequest()()
+                        }),
+                        button({
+                            innerText: "register",
+                            onclick: () => registerRequest()()
+                        })
+                    ]
+                })
+            }),
+            userPage: page(({cleaners, preRender}) => {
+                const [logout, setLogout] = state("logout");
+                const [transfer, setTransfer] = state("transfer");
+                const [history, setHistory] = state("history");
+                const [withdraw, setWithdraw] = state("withdraw");
+                preRender.push(setLogout);
+                preRender.push(setTransfer);
+                preRender.push(setHistory);
+                preRender.push(setWithdraw);
+
+                const info = p({});
+                cleaners.push(() => info.innerText = "");
+                preRender.push((state) => {
+                    const {realname, balance, isAdmin} = state.userData;
+                    info.innerText = "Hello, " + realname + ". Your balance is " + balance + " G$H";
+                    if(isAdmin) {
+                        info.innerText += ". You are an admin"
+                    }
+                });
+
+                function makeButton(name, v) {
+                    return button({
+                        innerText: name,
+                        onclick: () => v()()
+                    })
+                }
+                return div({
+                    children: [
+                        info, makeButton("Transfer", transfer), makeButton("History", history),
+                        makeButton("Withdraw", withdraw), makeButton("Logout", logout)
+                    ]
+                })
+            }),
+            history: page(({cleaners, preRender}) => {
+                const [back, setBack] = state("back");
+                preRender.push(setBack);
+                const data = div({});
+                cleaners.push(() => removeAllChildren(data));
+                preRender.push(({history}) => {
+                    if(history.length === 0) {
+                        data.appendChild(p({
+                            innerText: "You have no transactions in your history"
+                        }))
+                    }
+                    for(const {['from']: fr, to, amount} of history) {
+                        const elem = p({
+                            style: { display: "block" },
+                            innerText: "From: " + fr + ", to: " + to + ", value: " + amount
+                        });
+                        data.appendChild(elem);
+                    }
+                });
+                return div({
+                    children: [
+                        data,
+                        button({
+                            innerText: "Back",
+                            onclick: () => back()()
+                        })
+                    ]
+                });
+            }),
+            transfer: page(({cleaners, preRender}) => {
+                const [back, setBack] = state("back");
+                const [transfer, setTransfer] = state("doTransfer");
+                preRender.push(setBack);
+                preRender.push(setTransfer);
+
+                const error = p({});
+                cleaners.push(() => error.innerText = "");
+                preRender.push(state => error.innerText = state.transferError || "");
+
+                const who = input({
+                    placeholder: "To who"
+                });
+                cleaners.push(resetInput(who));
+                const amount = input({
+                    placeholder: "Amount"
+                });
+                cleaners.push(resetInput(amount));
+
+                const submit = button({
+                    innerText: "Transfer",
+                    onclick: () => transfer()({
+                        to: who.value,
+                        amount: amount.value
+                    })
+                });
+
+                return div({
+                    children: [
+                        who,
+                        amount,
+                        submit,
+                        button({
+                            innerText: "Back",
+                            onclick: () => back()()
+                        }),
+                        element("br", {}), error
+                    ]
+                });
+            }),
+            withdraw: page(({cleaners, preRender}) => {
+                const [back, setBack] = state("back");
+                const [withdraw, setWithdraw] = state("doWithdraw");
+                preRender.push(setBack);
+                preRender.push(setWithdraw);
+
+                const error = p({});
+                cleaners.push(() => error.innerText = "");
+                preRender.push(state => error.innerText = state.withdrawError || "");
+
+                const amount = input({
+                    placeholder: "Amount"
+                });
+                cleaners.push(resetInput(amount));
+
+                const submit = button({
+                    innerText: "Withdraw",
+                    onclick: () => withdraw()({
+                        amount: amount.value
+                    })
+                });
+
+                return div({
+                    children: [
+                        amount,
+                        submit,
+                        button({
+                            innerText: "Back",
+                            onclick: () => back()()
+                        }),
+                        element("br", {}), error
+                    ]
+                });
+            })
+        };
+
+        async function doLogin() {
+            while(true) {
+                const {action, value} = await renderer.goto("login", ["doLogin", "back"]);
+                renderer.state.loginError = null;
+                if(action === "doLogin") {
+                    const {success, error, token} = await jsonPost("/api/login", value);
+                    if(success) {
+                        return token;
+                    }
+                    renderer.state.loginError = error;
+                } else if(action === "back") {
+                    return null;
+                }
+            }
+        }
+
+        async function doRegister() {
+            while(true) {
+                const {action, value} = await renderer.goto("register", ["doRegister", "back"]);
+                renderer.state.registerError = null;
+                if(action === "doRegister") {
+                    const {success, error, token} = await jsonPost("/api/register", value);
+                    if(success) {
+                        return token;
+                    }
+                    renderer.state.registerError = error;
+                } else if(action === "back") {
+                    return;
+                }
+            }
+        }
+
+        async function doTransfer(token) {
+            while(true) {
+                const {action, value} = await renderer.goto("transfer", ["doTransfer", "back"]);
+                renderer.state.transferError = null;
+                if(action === "back") {
+                    return;
+                } else if(action === "doTransfer") {
+                    if(!parseInt(value.amount) || parseInt(value.amount) < 1) {
+                        renderer.state.transferError = "Amount must be a positive integer >= 1";
+                        continue;
+                    }
+                    value.amount = parseInt(value.amount);
+                    const {success, error} = await jsonPost("/api/transfer", value, token);
+                    if(success) {
+                        return;
+                    }
+                    renderer.state.transferError = error;
+                }
+            }
+        }
+
+        async function fetchHistory(token) {
+            while(true) {
+                const {success, history} = await jsonGet("/api/history", token);
+                if(!success) {
+                    throw "logout";
+                }
+                renderer.state.history = history;
+                const {action} = await renderer.goto("history", ["back"]);
+                renderer.state.history = null;
+                if(action === "back") {
+                    return;
+                }
+            }
+        }
+
+        async function doWithdraw(token) {
+            while(true) {
+                const {action, value} = await renderer.goto("withdraw", ["doWithdraw", "back"]);
+                renderer.state.withdrawError = null;
+                if(action === "back") {
+                    return;
+                } else if(action === "doWithdraw") {
+                    if(!parseInt(value.amount) || parseInt(value.amount) < 1) {
+                        renderer.state.withdrawError = "Amount must be a positive integer >= 1";
+                        continue;
+                    }
+                    value.amount = parseInt(value.amount);
+                    const {success, error} = await jsonPost("/api/withdraw", value, token);
+                    if(success) {
+                        return;
+                    }
+                    renderer.state.withdrawError = error;
+                }
+            }
+        }
+
+        async function handleTokenAvailable(token) {
+            localStorage.setItem("token", token);
+            try {
+                while(true) {
+                    const {success, realname, balance, is_admin} = await jsonGet("/api/info", token);
+                    console.log("workou:", success);
+                    if(!success) {
+                        renderer.state.userData = null;
+                        // noinspection ExceptionCaughtLocallyJS
+                        throw "logout";
+                    }
+                    renderer.state.userData = {realname, balance, isAdmin: is_admin};
+                    const {action} = await renderer.goto("userPage", ["logout", "transfer", "history", "withdraw"]);
+                    renderer.state.userData = null;
+                    if(action === "logout") {
+                        localStorage.removeItem("token");
+                        return;
+                    } else if(action === "transfer") {
+                        await doTransfer(token);
+                    } else if(action === "history") {
+                        await fetchHistory(token);
+                    } else if(action === "withdraw") {
+                        await doWithdraw(token);
+                    }
+                }
+            } catch(e) {
+                localStorage.removeItem("token");
+            }
+        }
+
+        async function main() {
+            const token = localStorage.getItem("token");
+            token && await handleTokenAvailable(token);
+            // noinspection InfiniteLoopJS
+            while(true) {
+                const {action} = await renderer.goto("home", ["login", "register"]);
+                if(action === "login") {
+                    const token = await doLogin();
+                    token && await handleTokenAvailable(token);
+                } else if(action === "register") {
+                    const token = await doRegister();
+                    token && await handleTokenAvailable(token);
+                }
+            }
+        }
+
+        main()
+    </script>
+</html>
